@@ -24,7 +24,7 @@ struct ContactSection: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 16) {
-                    ContactRow(icon: "mappin.and.ellipse", text: "Maksudiye Mah. Merkez Sk. No:12, İstanbul")
+                    ContactRow(icon: "mappin.and.ellipse", text: "Maksudiye Mah. Merkez Sk. No:12, Ankara")
                     ContactRow(icon: "phone.fill", text: "+90 212 555 00 00")
                     ContactRow(icon: "envelope", text: "info@maksudiye.org.tr")
                 }

@@ -87,7 +87,7 @@ private struct PrayerRow: View {
 
 #Preview {
     PrayerTimesList(
-        location: "İstanbul, TR",
+        location: "Ankara, TR",
         prayers: [
             PrayerTime(name: "İmsak", time: "05:42", icon: "sunrise"),
             PrayerTime(name: "Güneş", time: "07:12", icon: "sun.max"),

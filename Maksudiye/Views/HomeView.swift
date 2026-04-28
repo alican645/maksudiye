@@ -31,7 +31,7 @@ struct HomeView: View {
                     remaining: "02:45:12"
                 )
 
-                PrayerTimesList(location: "İstanbul, TR", prayers: prayers)
+                PrayerTimesList(location: "Ankara, TR", prayers: prayers)
 
                 VerseOfTheDayCard(
                     arabicText: "يَا أَيُّهَا الَّذِينَ آمَنُوا اسْتَعِينُوا بِالصَّبْرِ وَالصَّلَاةِ ۚ إِنَّ اللَّهَ مَعَ الصَّابِرِينَ",
