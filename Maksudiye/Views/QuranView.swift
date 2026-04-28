@@ -166,32 +166,64 @@ struct QuranView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 40)
             } else if !surahs.isEmpty {
-                Menu {
-                    ForEach(surahs) { surah in
-                        Button("\(surah.number). \(surah.englishName) - \(surah.name)") {
-                            Task { await loadSurah(number: surah.number) }
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(surahs) { surah in
+                            Button {
+                                Task { await loadSurah(number: surah.number) }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Text("\(surah.number).")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(AppColors.textSecondary)
+                                        .frame(width: 28, alignment: .leading)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(surah.englishName)
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundStyle(AppColors.textPrimary)
+
+                                        Text(surah.name)
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundStyle(AppColors.textSecondary)
+                                    }
+
+                                    Spacer()
+
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("\(surah.numberOfAyahs) Ayet")
+                                            .font(.system(size: 13, weight: .medium))
+                                            .foregroundStyle(AppColors.textSecondary)
+
+                                        Text(surah.revelationType)
+                                            .font(.system(size: 12, weight: .regular))
+                                            .foregroundStyle(AppColors.textSecondary.opacity(0.85))
+                                    }
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(selectedSurah?.number == surah.number ? AppColors.surface : Color.clear)
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider()
+                                .padding(.leading, 14)
+                                .padding(.vertical, 2)
                         }
                     }
-                } label: {
-                    HStack {
-                        Text(selectedSurah.map { "\($0.number). \($0.englishName)" } ?? "Sure Seç")
-                            .foregroundStyle(AppColors.textPrimary)
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .foregroundStyle(AppColors.textSecondary)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
-                            .fill(AppColors.surface)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
-                            .stroke(AppColors.borderSoft, lineWidth: 1)
-                    )
                 }
-                .buttonStyle(.plain)
+                .frame(maxHeight: 360)
+                .background(
+                    RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                        .fill(AppColors.surface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                        .stroke(AppColors.borderSoft, lineWidth: 1)
+                )
             }
 
             if isLoadingSurah {
@@ -283,6 +315,9 @@ struct QuranView: View {
         do {
             let response: SurahListResponse = try await QuranAPI.shared.fetch(path: "surah")
             surahs = response.data
+            if selectedSurah == nil, let firstSurah = surahs.first {
+                await loadSurah(number: firstSurah.number)
+            }
         } catch {
             surahError = "Sure listesi alınamadı."
         }
@@ -351,6 +386,8 @@ private struct SurahSummary: Decodable, Identifiable {
     let number: Int
     let name: String
     let englishName: String
+    let numberOfAyahs: Int
+    let revelationType: String
 
     var id: Int { number }
 }
