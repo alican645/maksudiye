@@ -448,7 +448,7 @@ private struct FullScreenQuranReader: View {
                     ScrollView(.vertical, showsIndicators: true) {
                         Color.clear
                             .frame(height: 0)
-                            .id(scrollTarget)
+                            .id("fullScreenTop")
 
                         VerseContentCard(
                             verses: verses,
@@ -458,7 +458,14 @@ private struct FullScreenQuranReader: View {
                         .padding(.bottom, 8)
                     }
                     .onChange(of: scrollTarget) { _ in
-                        proxy.scrollTo(scrollTarget, anchor: .top)
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("fullScreenTop", anchor: .top)
+                        }
+                    }
+                    .onChange(of: currentPage) { _ in
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("fullScreenTop", anchor: .top)
+                        }
                     }
                 }
                 .frame(maxHeight: .infinity)
