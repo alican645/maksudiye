@@ -17,6 +17,7 @@ struct QuranView: View {
     @State private var isLoadingSurahList: Bool = false
     @State private var pageError: String?
     @State private var surahError: String?
+    @State private var isLoadingJuz: Bool = false
     @State private var activeTab: QuranTab = .page
     @State private var isFullScreenReading: Bool = false
 
@@ -82,6 +83,8 @@ struct QuranView: View {
 
             BismillahDivider()
 
+            juzJumpControl
+
             if isLoadingPage {
                 ProgressView("Sayfa yükleniyor...")
                     .frame(maxWidth: .infinity)
@@ -101,6 +104,40 @@ struct QuranView: View {
                 onNext: { if currentPage < totalPages { currentPage += 1 } }
             )
         }
+    }
+
+    private var juzJumpControl: some View {
+        Menu {
+            ForEach(1...30, id: \.self) { juz in
+                Button("Cüz \(juz)") {
+                    Task { await jumpToJuz(juz) }
+                }
+            }
+        } label: {
+            HStack {
+                Text("Cüz: \(inferredJuzNumber)")
+                    .foregroundStyle(AppColors.textPrimary)
+                Spacer()
+                if isLoadingJuz {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Image(systemName: "chevron.down")
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                    .fill(AppColors.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                    .stroke(AppColors.borderSoft, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var surahReader: some View {
@@ -185,6 +222,10 @@ struct QuranView: View {
         currentPageSurah?.englishName ?? "Sayfa \(currentPage)"
     }
 
+    private var inferredJuzNumber: Int {
+        pageVerses.first?.juz ?? 1
+    }
+
     @MainActor
     private func loadPage(number: Int) async {
         isLoadingPage = true
@@ -198,6 +239,23 @@ struct QuranView: View {
             pageError = "Sayfa getirilemedi. Lütfen bağlantınızı kontrol edin."
         }
         isLoadingPage = false
+    }
+
+    @MainActor
+    private func jumpToJuz(_ juz: Int) async {
+        isLoadingJuz = true
+        pageError = nil
+        do {
+            let response: QuranJuzResponse = try await QuranAPI.shared.fetch(path: "juz/\(juz)/quran-uthmani")
+            if let firstPage = response.data.ayahs.first?.page {
+                currentPage = firstPage
+            } else {
+                pageError = "Cüz başlangıç sayfası bulunamadı."
+            }
+        } catch {
+            pageError = "Cüz bilgisi getirilemedi."
+        }
+        isLoadingJuz = false
     }
 
     @MainActor
@@ -262,6 +320,10 @@ private struct QuranPageData: Decodable {
     let ayahs: [Ayah]
 }
 
+private struct QuranJuzResponse: Decodable {
+    let data: QuranPageData
+}
+
 private struct SurahListResponse: Decodable {
     let data: [SurahSummary]
 }
@@ -288,10 +350,12 @@ private struct SurahDetail: Decodable {
 private struct Ayah: Decodable {
     let numberInSurah: Int
     let text: String
-    let surah: SurahMeta
+    let surah: SurahMeta?
+    let juz: Int?
+    let page: Int?
 
     var asVerse: QuranVerse {
-        QuranVerse(number: numberInSurah, tokens: tokenizeArabicText())
+        QuranVerse(number: numberInSurah, tokens: tokenizeArabicText(), juz: juz)
     }
 
     private func tokenizeArabicText() -> [QuranToken] {

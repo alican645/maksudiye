@@ -19,6 +19,7 @@ struct QuranVerse: Identifiable {
     let id = UUID()
     let number: Int
     let tokens: [QuranToken]
+    var juz: Int? = nil
 }
 
 struct VerseContentCard: View {
