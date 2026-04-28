@@ -398,6 +398,7 @@ private struct FullScreenQuranReader: View {
     let onClose: () -> Void
     let onPrevious: () -> Void
     let onNext: () -> Void
+    @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -419,12 +420,16 @@ private struct FullScreenQuranReader: View {
                         .foregroundStyle(.black.opacity(0.8))
                 }
 
-                VerseContentCard(
-                    verses: verses,
-                    showsActions: false,
-                    mushafMode: true
-                )
+                ScrollView(.vertical, showsIndicators: true) {
+                    VerseContentCard(
+                        verses: verses,
+                        showsActions: false,
+                        mushafMode: true
+                    )
+                    .padding(.bottom, 8)
+                }
                 .frame(maxHeight: .infinity)
+                .scrollIndicators(.visible)
 
                 HStack(spacing: 12) {
                     Button("Önceki") { onPrevious() }
@@ -440,6 +445,34 @@ private struct FullScreenQuranReader: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            .offset(x: dragOffset)
+            .animation(.easeOut(duration: 0.2), value: dragOffset)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 40, coordinateSpace: .local)
+                    .onChanged { value in
+                        guard isIntentionalPageSwipe(value) else {
+                            dragOffset = 0
+                            return
+                        }
+                        dragOffset = value.translation.width * 0.15
+                    }
+                    .onEnded { value in
+                        defer { dragOffset = 0 }
+                        guard isIntentionalPageSwipe(value) else { return }
+
+                        if value.translation.width >= 150 {
+                            onPrevious()
+                        } else if value.translation.width <= -150 {
+                            onNext()
+                        }
+                    }
+            )
         }
+    }
+
+    private func isIntentionalPageSwipe(_ value: DragGesture.Value) -> Bool {
+        let horizontal = abs(value.translation.width)
+        let vertical = abs(value.translation.height)
+        return horizontal > max(90, vertical * 1.6)
     }
 }
