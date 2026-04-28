@@ -9,6 +9,8 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selectedTab: BottomTab = .home
+    @StateObject private var prayerViewModel = PrayerTimesViewModel()
+    @State private var showSettings = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -17,7 +19,7 @@ struct ContentView: View {
             Group {
                 switch selectedTab {
                 case .home:
-                    HomeView()
+                    HomeView(viewModel: prayerViewModel)
                 case .quran:
                     QuranView()
                 case .about:
@@ -50,6 +52,9 @@ struct ContentView: View {
             BottomNavBar(selected: $selectedTab)
                 .ignoresSafeArea(edges: .bottom)
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(viewModel: prayerViewModel)
+        }
     }
 
     private func leading(for tab: BottomTab) -> TopAppBarLeading {
@@ -59,11 +64,14 @@ struct ContentView: View {
     private func actions(for tab: BottomTab) -> [TopAppBarAction] {
         switch tab {
         case .home:
-            return [TopAppBarAction(icon: "bell", action: {})]
+            return [
+                TopAppBarAction(icon: "bell", action: {}),
+                TopAppBarAction(icon: "gearshape", action: { showSettings = true })
+            ]
         case .quran:
             return [
                 TopAppBarAction(icon: "magnifyingglass", action: {}),
-                TopAppBarAction(icon: "gearshape", action: {})
+                TopAppBarAction(icon: "gearshape", action: { showSettings = true })
             ]
         case .about:
             return []

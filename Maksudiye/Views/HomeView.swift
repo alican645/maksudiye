@@ -6,7 +6,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @StateObject private var viewModel = PrayerTimesViewModel()
+    @ObservedObject var viewModel: PrayerTimesViewModel
     @Environment(\.scenePhase) private var scenePhase
 
     private let quickActions: [QuickAction] = [
@@ -133,5 +133,5 @@ private struct LocationSelectionSheet: View {
 }
 
 #Preview {
-    HomeView()
+    HomeView(viewModel: PrayerTimesViewModel())
 }
