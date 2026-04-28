@@ -119,7 +119,7 @@ struct VerseContentCard: View {
     }
 
     private func attributedFlow(for verses: [QuranVerse]) -> NSAttributedString {
-        let allahColor = Color(red: 185 / 255, green: 28 / 255, blue: 28 / 255)
+        let allahColor = UIColor(red: 185 / 255, green: 28 / 255, blue: 28 / 255, alpha: 1)
         let baseColor = AppColors.textPrimary
         let markerColor = AppColors.primaryDark
         let paragraphStyle = NSMutableParagraphStyle()
@@ -149,7 +149,7 @@ struct VerseContentCard: View {
                             string: token.text,
                             attributes: [
                                 .font: font,
-                                .foregroundColor: UIColor(allahColor),
+                                .foregroundColor: allahColor,
                                 .paragraphStyle: paragraphStyle
                             ]
                         )
