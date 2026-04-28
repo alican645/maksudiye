@@ -60,7 +60,7 @@ struct HomeView: View {
         .sheet(isPresented: $viewModel.showLocationPicker) {
             LocationSelectionSheet(viewModel: viewModel)
         }
-        .onChange(of: scenePhase) { _, newPhase in
+        .onChange(of: scenePhase) { newPhase in
             guard newPhase == .active else { return }
             Task { await viewModel.refreshIfNeeded() }
         }
