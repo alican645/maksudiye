@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct QuranToken {
     enum Style {
@@ -20,6 +21,8 @@ struct QuranVerse: Identifiable {
     let number: Int
     let tokens: [QuranToken]
     var juz: Int? = nil
+    var surahNumber: Int? = nil
+    var surahName: String? = nil
 }
 
 struct VerseContentCard: View {
@@ -59,11 +62,21 @@ struct VerseContentCard: View {
                 }
             }
 
-            arabicFlow
-                .multilineTextAlignment(.center)
-                .lineSpacing(20)
-                .frame(maxWidth: .infinity)
-                .environment(\.layoutDirection, .rightToLeft)
+            VStack(alignment: .trailing, spacing: 20) {
+                ForEach(Array(groupedVerses.enumerated()), id: \.element.id) { index, group in
+                    if index > 0,
+                       let surahName = group.surahName,
+                       let surahNumber = group.surahNumber {
+                        SurahTransitionBand(surahNumber: surahNumber, surahName: surahName)
+                    }
+
+                    JustifiedArabicTextView(
+                        attributedText: attributedFlow(for: group.verses)
+                    )
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            .environment(\.layoutDirection, .rightToLeft)
         }
         .padding(mushafMode ? 20 : 24)
         .background(
@@ -78,33 +91,83 @@ struct VerseContentCard: View {
         .shadow(color: AppColors.primary.opacity(0.04), radius: 10, y: 4)
     }
 
-    private var arabicFlow: Text {
+    private var groupedVerses: [SurahVerseGroup] {
+        guard let firstVerse = verses.first else { return [] }
+        var groups: [SurahVerseGroup] = [
+            SurahVerseGroup(
+                surahNumber: firstVerse.surahNumber,
+                surahName: firstVerse.surahName,
+                verses: [firstVerse]
+            )
+        ]
+
+        for verse in verses.dropFirst() {
+            if groups.last?.surahNumber == verse.surahNumber {
+                groups[groups.count - 1].verses.append(verse)
+            } else {
+                groups.append(
+                    SurahVerseGroup(
+                        surahNumber: verse.surahNumber,
+                        surahName: verse.surahName,
+                        verses: [verse]
+                    )
+                )
+            }
+        }
+
+        return groups
+    }
+
+    private func attributedFlow(for verses: [QuranVerse]) -> NSAttributedString {
         let allahColor = Color(red: 185 / 255, green: 28 / 255, blue: 28 / 255)
         let baseColor = AppColors.textPrimary
         let markerColor = AppColors.primaryDark
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .justified
+        paragraphStyle.baseWritingDirection = .rightToLeft
+        paragraphStyle.lineSpacing = 18
 
-        var stream = Text("")
+        let stream = NSMutableAttributedString()
         for verse in verses {
             for token in verse.tokens {
+                let font = UIFont(name: "GeezaPro", size: 32) ?? UIFont.systemFont(ofSize: 32)
                 switch token.style {
                 case .normal:
-                    stream = stream
-                        + Text(token.text)
-                            .font(.custom("GeezaPro", size: 28))
-                            .foregroundColor(baseColor)
+                    stream.append(
+                        NSAttributedString(
+                            string: token.text,
+                            attributes: [
+                                .font: font,
+                                .foregroundColor: UIColor(baseColor),
+                                .paragraphStyle: paragraphStyle
+                            ]
+                        )
+                    )
                 case .allah:
-                    stream = stream
-                        + Text(token.text)
-                            .font(.custom("GeezaPro", size: 28))
-                            .foregroundColor(allahColor)
-                            .fontWeight(.bold)
+                    stream.append(
+                        NSAttributedString(
+                            string: token.text,
+                            attributes: [
+                                .font: font,
+                                .foregroundColor: UIColor(allahColor),
+                                .paragraphStyle: paragraphStyle
+                            ]
+                        )
+                    )
                 }
             }
-            stream = stream
-                + Text(" \(arabicMarker(for: verse.number)) ")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(markerColor)
+            stream.append(
+                NSAttributedString(
+                    string: " \(arabicMarker(for: verse.number)) ",
+                    attributes: [
+                        .font: UIFont.systemFont(ofSize: 24, weight: .semibold),
+                        .foregroundColor: UIColor(markerColor),
+                        .paragraphStyle: paragraphStyle
+                    ]
+                )
+            )
         }
+
         return stream
     }
 
@@ -112,6 +175,70 @@ struct VerseContentCard: View {
         let digits = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"]
         let arabicNumber = String(number).compactMap { digits[Int(String($0)) ?? 0] }.joined()
         return "﴿\(arabicNumber)﴾"
+    }
+}
+
+private struct SurahVerseGroup: Identifiable {
+    let id = UUID()
+    let surahNumber: Int?
+    let surahName: String?
+    var verses: [QuranVerse]
+}
+
+private struct SurahTransitionBand: View {
+    let surahNumber: Int
+    let surahName: String
+
+    var body: some View {
+        HStack {
+            Spacer()
+            VStack(spacing: 4) {
+                Text("سُورَة")
+                    .font(.custom("GeezaPro", size: 20))
+                    .foregroundStyle(Color.white.opacity(0.95))
+                Text("\(surahName) (\(surahNumber))")
+                    .font(.system(size: 16, weight: .semibold, design: .serif))
+                    .foregroundStyle(Color.white)
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            Spacer()
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(red: 132 / 255, green: 116 / 255, blue: 29 / 255))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color(red: 214 / 255, green: 194 / 255, blue: 88 / 255), lineWidth: 2)
+                )
+        )
+    }
+}
+
+private struct JustifiedArabicTextView: UIViewRepresentable {
+    let attributedText: NSAttributedString
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.isEditable = false
+        textView.isSelectable = false
+        textView.isScrollEnabled = false
+        textView.backgroundColor = .clear
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.textAlignment = .justified
+        textView.semanticContentAttribute = .forceRightToLeft
+        return textView
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        uiView.attributedText = attributedText
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? UIScreen.main.bounds.width - 48
+        let fitting = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: fitting.height)
     }
 }
 

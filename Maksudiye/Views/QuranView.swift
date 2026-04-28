@@ -355,7 +355,13 @@ private struct Ayah: Decodable {
     let page: Int?
 
     var asVerse: QuranVerse {
-        QuranVerse(number: numberInSurah, tokens: tokenizeArabicText(), juz: juz)
+        QuranVerse(
+            number: numberInSurah,
+            tokens: tokenizeArabicText(),
+            juz: juz,
+            surahNumber: surah?.number,
+            surahName: surah?.name
+        )
     }
 
     private func tokenizeArabicText() -> [QuranToken] {
@@ -377,6 +383,7 @@ private struct Ayah: Decodable {
 
 private struct SurahMeta: Decodable {
     let number: Int
+    let name: String
     let englishName: String
 }
 
