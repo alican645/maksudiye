@@ -7,6 +7,7 @@ import SwiftUI
 
 struct QuranView: View {
     @AppStorage("quran.currentPage") private var persistedPage: Int = 1
+    @AppStorage("quran.offlineDownloadCompleted") private var isOfflineDownloadCompleted: Bool = false
     @State private var currentPage: Int = 1
     @State private var totalPages: Int = 604
     @State private var pageVerses: [QuranVerse] = []
@@ -23,10 +24,20 @@ struct QuranView: View {
     @State private var isFullScreenReading: Bool = false
     @State private var pageReaderScrollTarget = UUID()
     @State private var fullScreenScrollTarget = UUID()
+    @State private var showOfflineDownloadPrompt: Bool = false
+    @State private var hasPromptedForDownload: Bool = false
+    @State private var isDownloadingOfflineData: Bool = false
+    @State private var downloadProgress: Double = 0
+    @State private var downloadMessage: String = ""
+    @State private var offlineBundleLoaded: Bool = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
+                if !isOfflineDownloadCompleted {
+                    offlineDownloadCard
+                }
+
                 Picker("Okuma Türü", selection: $activeTab) {
                     ForEach(QuranTab.allCases, id: \.self) { tab in
                         Text(tab.title).tag(tab)
@@ -60,6 +71,11 @@ struct QuranView: View {
         .background(AppColors.background)
         .task {
             currentPage = max(1, min(persistedPage, totalPages))
+            await loadOfflineBundle()
+            if !isOfflineDownloadCompleted, !hasPromptedForDownload {
+                showOfflineDownloadPrompt = true
+                hasPromptedForDownload = true
+            }
             if surahs.isEmpty { await loadSurahList() }
             if pageVerses.isEmpty { await loadPage(number: currentPage) }
         }
@@ -80,6 +96,51 @@ struct QuranView: View {
                 scrollTarget: fullScreenScrollTarget
             )
         }
+        .alert("Kur'an-ı Kerim indirilsin mi?", isPresented: $showOfflineDownloadPrompt) {
+            Button("Haydi Başla") {
+                Task { await startOfflineDownload() }
+            }
+            Button("Sonra", role: .cancel) {}
+        } message: {
+            Text("Kullanıcıya kesintisiz okuma için tüm sayfaları ve sureleri indirmeniz gerekiyor.")
+        }
+        .tint(.green)
+    }
+
+    private var offlineDownloadCard: some View {
+        VStack(spacing: 12) {
+            Text("Kur'an-ı Kerim'i indirmeniz gerekiyor")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AppColors.textPrimary)
+                .multilineTextAlignment(.center)
+
+            if isDownloadingOfflineData {
+                ProgressView(value: downloadProgress, total: 1.0)
+                    .tint(.green)
+                Text(downloadMessage)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AppColors.textSecondary)
+            } else {
+                Button {
+                    showOfflineDownloadPrompt = true
+                } label: {
+                    Label("Haydi Başla", systemImage: "arrow.down.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                .fill(AppColors.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                .stroke(AppColors.borderSoft, lineWidth: 1)
+        )
     }
 
     private var pageReader: some View {
@@ -279,6 +340,14 @@ struct QuranView: View {
 
     @MainActor
     private func loadPage(number: Int) async {
+        if let cachedPage = QuranOfflineStore.shared.page(number: number) {
+            totalPages = 604
+            pageVerses = cachedPage.ayahs.map { $0.asVerse }
+            currentPageSurah = cachedPage.ayahs.first?.surah
+            pageError = nil
+            return
+        }
+
         isLoadingPage = true
         pageError = nil
         do {
@@ -286,6 +355,7 @@ struct QuranView: View {
             totalPages = 604
             pageVerses = response.data.ayahs.map { $0.asVerse }
             currentPageSurah = response.data.ayahs.first?.surah
+            QuranOfflineStore.shared.setPage(response.data, number: number)
         } catch {
             pageError = "Sayfa getirilemedi. Lütfen bağlantınızı kontrol edin."
         }
@@ -294,12 +364,18 @@ struct QuranView: View {
 
     @MainActor
     private func jumpToJuz(_ juz: Int) async {
+        if let cachedStartPage = QuranOfflineStore.shared.juzStartPage(for: juz) {
+            currentPage = cachedStartPage
+            return
+        }
+
         isLoadingJuz = true
         pageError = nil
         do {
             let response: QuranJuzResponse = try await QuranAPI.shared.fetch(path: "juz/\(juz)/quran-uthmani")
             if let firstPage = response.data.ayahs.first?.page {
                 currentPage = firstPage
+                QuranOfflineStore.shared.setJuzStartPage(firstPage, for: juz)
             } else {
                 pageError = "Cüz başlangıç sayfası bulunamadı."
             }
@@ -311,10 +387,23 @@ struct QuranView: View {
 
     @MainActor
     private func loadSurahList() async {
+        if !offlineBundleLoaded {
+            await loadOfflineBundle()
+        }
+
+        if !QuranOfflineStore.shared.surahList().isEmpty {
+            surahs = QuranOfflineStore.shared.surahList()
+            if selectedSurah == nil, let firstSurah = surahs.first {
+                await loadSurah(number: firstSurah.number)
+            }
+            return
+        }
+
         isLoadingSurahList = true
         do {
             let response: SurahListResponse = try await QuranAPI.shared.fetch(path: "surah")
             surahs = response.data
+            QuranOfflineStore.shared.setSurahList(response.data)
             if selectedSurah == nil, let firstSurah = surahs.first {
                 await loadSurah(number: firstSurah.number)
             }
@@ -326,15 +415,101 @@ struct QuranView: View {
 
     @MainActor
     private func loadSurah(number: Int) async {
+        if let cachedSurah = QuranOfflineStore.shared.surah(number: number) {
+            selectedSurah = cachedSurah
+            surahError = nil
+            return
+        }
+
         isLoadingSurah = true
         surahError = nil
         do {
             let response: SurahDetailResponse = try await QuranAPI.shared.fetch(path: "surah/\(number)/quran-uthmani")
             selectedSurah = response.data
+            QuranOfflineStore.shared.setSurah(response.data, number: number)
         } catch {
             surahError = "Seçilen sure getirilemedi."
         }
         isLoadingSurah = false
+    }
+
+    @MainActor
+    private func loadOfflineBundle() async {
+        guard !offlineBundleLoaded else { return }
+        offlineBundleLoaded = true
+        do {
+            try QuranOfflineStore.shared.loadFromDisk()
+        } catch {
+            // Geçersiz cache varsa sessizce devam edilir.
+        }
+    }
+
+    @MainActor
+    private func startOfflineDownload() async {
+        guard !isDownloadingOfflineData else { return }
+        isDownloadingOfflineData = true
+        downloadProgress = 0
+        downloadMessage = "İndirme başlatılıyor..."
+        pageError = nil
+        surahError = nil
+
+        let totalStepCount = 604 + 114 + 1
+        var completedSteps = 0
+        var freshlyDownloadedPages: [Int: QuranPageData] = [:]
+        var freshlyDownloadedSurahs: [Int: SurahDetail] = [:]
+        var fetchedSurahList: [SurahSummary] = []
+        var juzStartPages: [Int: Int] = [:]
+
+        do {
+            for page in 1...604 {
+                let response: QuranPageResponse = try await QuranAPI.shared.fetch(path: "page/\(page)/quran-uthmani")
+                freshlyDownloadedPages[page] = response.data
+
+                for ayah in response.data.ayahs {
+                    if let juz = ayah.juz, let ayahPage = ayah.page, juzStartPages[juz] == nil {
+                        juzStartPages[juz] = ayahPage
+                    }
+                }
+
+                completedSteps += 1
+                downloadProgress = Double(completedSteps) / Double(totalStepCount)
+                downloadMessage = "Sayfalar indiriliyor: \(page)/604"
+            }
+
+            let surahListResponse: SurahListResponse = try await QuranAPI.shared.fetch(path: "surah")
+            fetchedSurahList = surahListResponse.data
+            completedSteps += 1
+            downloadProgress = Double(completedSteps) / Double(totalStepCount)
+            downloadMessage = "Sure listesi indirildi"
+
+            for surah in 1...114 {
+                let response: SurahDetailResponse = try await QuranAPI.shared.fetch(path: "surah/\(surah)/quran-uthmani")
+                freshlyDownloadedSurahs[surah] = response.data
+                completedSteps += 1
+                downloadProgress = Double(completedSteps) / Double(totalStepCount)
+                downloadMessage = "Sureler indiriliyor: \(surah)/114"
+            }
+
+            QuranOfflineStore.shared.replaceAll(
+                pages: freshlyDownloadedPages,
+                surahList: fetchedSurahList,
+                surahs: freshlyDownloadedSurahs,
+                juzStartPages: juzStartPages
+            )
+            try QuranOfflineStore.shared.saveToDisk()
+            isOfflineDownloadCompleted = true
+            downloadMessage = "İndirme tamamlandı. Artık çevrimdışı okuyabilirsiniz."
+            if surahs.isEmpty {
+                surahs = fetchedSurahList
+            }
+            if pageVerses.isEmpty, let firstPage = freshlyDownloadedPages[currentPage] {
+                pageVerses = firstPage.ayahs.map { $0.asVerse }
+            }
+        } catch {
+            pageError = "İndirme sırasında bir hata oluştu. Lütfen tekrar deneyin."
+        }
+
+        isDownloadingOfflineData = false
     }
 }
 
@@ -370,7 +545,7 @@ private struct QuranPageResponse: Decodable {
     let data: QuranPageData
 }
 
-private struct QuranPageData: Decodable {
+private struct QuranPageData: Codable {
     let ayahs: [Ayah]
 }
 
@@ -382,7 +557,7 @@ private struct SurahListResponse: Decodable {
     let data: [SurahSummary]
 }
 
-private struct SurahSummary: Decodable, Identifiable {
+private struct SurahSummary: Codable, Identifiable {
     let number: Int
     let name: String
     let englishName: String
@@ -396,14 +571,14 @@ private struct SurahDetailResponse: Decodable {
     let data: SurahDetail
 }
 
-private struct SurahDetail: Decodable {
+private struct SurahDetail: Codable {
     let number: Int
     let name: String
     let englishName: String
     let ayahs: [Ayah]
 }
 
-private struct Ayah: Decodable {
+private struct Ayah: Codable {
     let numberInSurah: Int
     let text: String
     let surah: SurahMeta?
@@ -441,10 +616,107 @@ private struct Ayah: Decodable {
     }
 }
 
-private struct SurahMeta: Decodable {
+private struct SurahMeta: Codable {
     let number: Int
     let name: String
     let englishName: String
+}
+
+private final class QuranOfflineStore {
+    static let shared = QuranOfflineStore()
+
+    private var pages: [Int: QuranPageData] = [:]
+    private var surahListValue: [SurahSummary] = []
+    private var surahs: [Int: SurahDetail] = [:]
+    private var juzStartPages: [Int: Int] = [:]
+
+    private init() {}
+
+    func page(number: Int) -> QuranPageData? {
+        pages[number]
+    }
+
+    func setPage(_ page: QuranPageData, number: Int) {
+        pages[number] = page
+    }
+
+    func surahList() -> [SurahSummary] {
+        surahListValue
+    }
+
+    func setSurahList(_ list: [SurahSummary]) {
+        surahListValue = list
+    }
+
+    func surah(number: Int) -> SurahDetail? {
+        surahs[number]
+    }
+
+    func setSurah(_ surah: SurahDetail, number: Int) {
+        surahs[number] = surah
+    }
+
+    func juzStartPage(for juz: Int) -> Int? {
+        juzStartPages[juz]
+    }
+
+    func setJuzStartPage(_ page: Int, for juz: Int) {
+        juzStartPages[juz] = page
+    }
+
+    func replaceAll(
+        pages: [Int: QuranPageData],
+        surahList: [SurahSummary],
+        surahs: [Int: SurahDetail],
+        juzStartPages: [Int: Int]
+    ) {
+        self.pages = pages
+        self.surahListValue = surahList
+        self.surahs = surahs
+        self.juzStartPages = juzStartPages
+    }
+
+    func saveToDisk() throws {
+        let bundle = OfflineQuranBundle(
+            pages: pages,
+            surahList: surahListValue,
+            surahs: surahs,
+            juzStartPages: juzStartPages
+        )
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(bundle)
+        let folder = try storageDirectory()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try data.write(to: folder.appending(path: "offline-quran.json"), options: .atomic)
+    }
+
+    func loadFromDisk() throws {
+        let url = try storageDirectory().appending(path: "offline-quran.json")
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        let bundle = try decoder.decode(OfflineQuranBundle.self, from: data)
+        pages = bundle.pages
+        surahListValue = bundle.surahList
+        surahs = bundle.surahs
+        juzStartPages = bundle.juzStartPages
+    }
+
+    private func storageDirectory() throws -> URL {
+        try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        .appending(path: "QuranOfflineCache")
+    }
+}
+
+private struct OfflineQuranBundle: Codable {
+    let pages: [Int: QuranPageData]
+    let surahList: [SurahSummary]
+    let surahs: [Int: SurahDetail]
+    let juzStartPages: [Int: Int]
 }
 
 #Preview {
