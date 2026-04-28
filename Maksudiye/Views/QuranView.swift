@@ -18,6 +18,7 @@ struct QuranView: View {
     @State private var pageError: String?
     @State private var surahError: String?
     @State private var activeTab: QuranTab = .page
+    @State private var isFullScreenReading: Bool = false
 
     var body: some View {
         ScrollView {
@@ -28,6 +29,18 @@ struct QuranView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                if activeTab == .page {
+                    Button {
+                        isFullScreenReading = true
+                    } label: {
+                        Label("Tam Ekran Oku", systemImage: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppColors.primaryDark)
+                }
 
                 switch activeTab {
                 case .page:
@@ -47,6 +60,16 @@ struct QuranView: View {
         }
         .task(id: currentPage) {
             await loadPage(number: currentPage)
+        }
+        .fullScreenCover(isPresented: $isFullScreenReading) {
+            FullScreenQuranReader(
+                verses: pageVerses,
+                currentPage: currentPage,
+                totalPages: totalPages,
+                onClose: { isFullScreenReading = false },
+                onPrevious: { if currentPage > 1 { currentPage -= 1 } },
+                onNext: { if currentPage < totalPages { currentPage += 1 } }
+            )
         }
     }
 
@@ -268,7 +291,23 @@ private struct Ayah: Decodable {
     let surah: SurahMeta
 
     var asVerse: QuranVerse {
-        QuranVerse(number: numberInSurah, tokens: [QuranToken(text: "\(text) ")])
+        QuranVerse(number: numberInSurah, tokens: tokenizeArabicText())
+    }
+
+    private func tokenizeArabicText() -> [QuranToken] {
+        text
+            .split(separator: " ", omittingEmptySubsequences: false)
+            .map { word in
+                let tokenText = "\(word) "
+                return QuranToken(text: tokenText, style: isAllahWord(String(word)) ? .allah : .normal)
+            }
+    }
+
+    private func isAllahWord(_ rawWord: String) -> Bool {
+        let punctuation = CharacterSet(charactersIn: "ۚۖۗۙۛۜ۝۞،؛,.!?()[]{}\"'«»")
+        let stripped = rawWord.trimmingCharacters(in: punctuation)
+        let normalized = stripped.folding(options: .diacriticInsensitive, locale: .current)
+        return normalized.contains("الله")
     }
 }
 
@@ -279,4 +318,57 @@ private struct SurahMeta: Decodable {
 
 #Preview {
     QuranView()
+}
+
+private struct FullScreenQuranReader: View {
+    let verses: [QuranVerse]
+    let currentPage: Int
+    let totalPages: Int
+    let onClose: () -> Void
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color(red: 232 / 255, green: 219 / 255, blue: 176 / 255)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                HStack {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 30))
+                            .foregroundStyle(.black.opacity(0.75))
+                    }
+
+                    Spacer()
+
+                    Text("Sayfa \(currentPage)")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.black.opacity(0.8))
+                }
+
+                VerseContentCard(
+                    verses: verses,
+                    showsActions: false,
+                    mushafMode: true
+                )
+                .frame(maxHeight: .infinity)
+
+                HStack(spacing: 12) {
+                    Button("Önceki") { onPrevious() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AppColors.primaryDark)
+                        .disabled(currentPage <= 1)
+
+                    Button("Sonraki") { onNext() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AppColors.primaryDark)
+                        .disabled(currentPage >= totalPages)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+    }
 }

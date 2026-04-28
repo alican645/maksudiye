@@ -23,35 +23,39 @@ struct QuranVerse: Identifiable {
 
 struct VerseContentCard: View {
     let verses: [QuranVerse]
+    var showsActions: Bool = true
+    var mushafMode: Bool = false
     var onListen: () -> Void = {}
     var onBookmark: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 16) {
-            HStack(spacing: 8) {
-                Spacer()
+            if showsActions {
+                HStack(spacing: 8) {
+                    Spacer()
 
-                Button(action: onListen) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "play.circle")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("DİNLE")
-                            .font(.system(size: 12, weight: .semibold))
-                            .tracking(0.6)
-                    }
-                    .foregroundStyle(AppColors.primaryDark)
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.clear))
-                }
-                .buttonStyle(.plain)
-
-                Button(action: onBookmark) {
-                    Image(systemName: "bookmark")
-                        .font(.system(size: 14, weight: .regular))
+                    Button(action: onListen) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "play.circle")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("DİNLE")
+                                .font(.system(size: 12, weight: .semibold))
+                                .tracking(0.6)
+                        }
                         .foregroundStyle(AppColors.primaryDark)
                         .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.clear))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onBookmark) {
+                        Image(systemName: "bookmark")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundStyle(AppColors.primaryDark)
+                            .padding(8)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
 
             arabicFlow
@@ -60,12 +64,15 @@ struct VerseContentCard: View {
                 .frame(maxWidth: .infinity)
                 .environment(\.layoutDirection, .rightToLeft)
         }
-        .padding(24)
+        .padding(mushafMode ? 20 : 24)
         .background(
-            RoundedRectangle(cornerRadius: 16).fill(AppColors.surface)
+            RoundedRectangle(cornerRadius: mushafMode ? 6 : 16)
+                .fill(mushafMode ? Color(red: 247 / 255, green: 238 / 255, blue: 206 / 255) : AppColors.surface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16).stroke(AppColors.borderSoft, lineWidth: 1)
+            RoundedRectangle(cornerRadius: mushafMode ? 6 : 16)
+                .stroke(mushafMode ? Color(red: 130 / 255, green: 108 / 255, blue: 63 / 255) : AppColors.borderSoft, lineWidth: mushafMode ? 2 : 1)
+                .padding(mushafMode ? 8 : 0)
         )
         .shadow(color: AppColors.primary.opacity(0.04), radius: 10, y: 4)
     }
