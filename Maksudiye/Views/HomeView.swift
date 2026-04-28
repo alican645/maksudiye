@@ -6,14 +6,8 @@
 import SwiftUI
 
 struct HomeView: View {
-    private let prayers: [PrayerTime] = [
-        PrayerTime(name: "İmsak", time: "05:42", icon: "sunrise"),
-        PrayerTime(name: "Güneş", time: "07:12", icon: "sun.max"),
-        PrayerTime(name: "Öğle", time: "13:12", icon: "sun.max.fill", isActive: true),
-        PrayerTime(name: "İkindi", time: "16:45", icon: "sun.haze"),
-        PrayerTime(name: "Akşam", time: "19:32", icon: "sunset"),
-        PrayerTime(name: "Yatsı", time: "21:05", icon: "moon.stars")
-    ]
+    @StateObject private var viewModel = PrayerTimesViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     private let quickActions: [QuickAction] = [
         QuickAction(title: "Bağış Yap", icon: "heart"),
@@ -26,12 +20,20 @@ struct HomeView: View {
         ScrollView {
             VStack(spacing: AppMetrics.sectionSpacing) {
                 NextPrayerCard(
-                    prayerName: "Öğle",
-                    time: "13:12",
-                    remaining: "02:45:12"
+                    prayerName: viewModel.nextPrayerInfo?.name ?? "-",
+                    time: viewModel.nextPrayerInfo?.time ?? "--:--",
+                    remaining: viewModel.nextPrayerInfo?.remaining ?? "--:--:--",
+                    onAction: { viewModel.showLocationPicker = true }
                 )
 
-                PrayerTimesList(location: "Ankara, TR", prayers: prayers)
+                PrayerTimesList(location: viewModel.locationTitle, prayers: viewModel.todayPrayerRows)
+
+                if let error = viewModel.errorMessage {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
                 VerseOfTheDayCard(
                     arabicText: "يَا أَيُّهَا الَّذِينَ آمَنُوا اسْتَعِينُوا بِالصَّبْرِ وَالصَّلَاةِ ۚ إِنَّ اللَّهَ مَعَ الصَّابِرِينَ",
@@ -52,6 +54,81 @@ struct HomeView: View {
             .padding(.bottom, 32)
         }
         .background(AppColors.background)
+        .task {
+            await viewModel.bootstrap()
+        }
+        .sheet(isPresented: $viewModel.showLocationPicker) {
+            LocationSelectionSheet(viewModel: viewModel)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task { await viewModel.refreshIfNeeded() }
+        }
+        .overlay {
+            if viewModel.isLoading {
+                ProgressView("Yükleniyor...")
+                    .padding(20)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+}
+
+private struct LocationSelectionSheet: View {
+    @ObservedObject var viewModel: PrayerTimesViewModel
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("İl") {
+                    Picker("Şehir", selection: Binding(
+                        get: { viewModel.selectedCity?.id },
+                        set: { newID in
+                            guard let id = newID,
+                                  let city = viewModel.cities.first(where: { $0.id == id }) else { return }
+                            Task { await viewModel.fetchDistrictsIfNeeded(for: city) }
+                        }
+                    )) {
+                        Text("Seçiniz").tag(String?.none)
+                        ForEach(viewModel.cities) { city in
+                            Text(city.sehirAdi).tag(Optional(city.id))
+                        }
+                    }
+                }
+
+                Section("İlçe") {
+                    Picker("İlçe", selection: Binding(
+                        get: { viewModel.selectedDistrict?.id },
+                        set: { newID in
+                            guard let id = newID else { return }
+                            viewModel.selectedDistrict = viewModel.districts.first(where: { $0.id == id })
+                        }
+                    )) {
+                        Text("Seçiniz").tag(String?.none)
+                        ForEach(viewModel.districts) { district in
+                            Text(district.ilceAdi).tag(Optional(district.id))
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Konum Seçimi")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Kaydet") {
+                        Task { await viewModel.saveSelectionAndLoad() }
+                    }
+                    .disabled(viewModel.selectedCity == nil || viewModel.selectedDistrict == nil)
+                }
+            }
+        }
+        .task {
+            if viewModel.cities.isEmpty {
+                await viewModel.loadCities()
+            }
+            if let selectedCity = viewModel.selectedCity {
+                await viewModel.fetchDistrictsIfNeeded(for: selectedCity)
+            }
+        }
     }
 }
 
