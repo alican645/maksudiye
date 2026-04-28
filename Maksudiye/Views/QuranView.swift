@@ -31,6 +31,8 @@ struct QuranView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloadMessage: String = ""
     @State private var offlineBundleLoaded: Bool = false
+    @State private var surahListPage: Int = 1
+    @State private var surahAyahPage: Int = 1
 
     var body: some View {
         ScrollView {
@@ -240,69 +242,11 @@ struct QuranView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 40)
             } else if !surahs.isEmpty {
-                ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(surahs) { surah in
-                            Button {
-                                Task {
-                                    await loadSurah(number: surah.number)
-                                    if selectedSurah != nil {
-                                        fullScreenScrollTarget = UUID()
-                                        isSurahFullScreenReading = true
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Text("\(surah.number).")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(AppColors.textSecondary)
-                                        .frame(width: 28, alignment: .leading)
+                surahListCard
 
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(surah.englishName)
-                                            .font(.system(size: 18, weight: .semibold))
-                                            .foregroundStyle(AppColors.textPrimary)
-
-                                        Text(surah.name)
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundStyle(AppColors.textSecondary)
-                                    }
-
-                                    Spacer()
-
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text("\(surah.numberOfAyahs) Ayet")
-                                            .font(.system(size: 13, weight: .medium))
-                                            .foregroundStyle(AppColors.textSecondary)
-
-                                        Text(surah.revelationType)
-                                            .font(.system(size: 12, weight: .regular))
-                                            .foregroundStyle(AppColors.textSecondary.opacity(0.85))
-                                    }
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(selectedSurah?.number == surah.number ? AppColors.surface : Color.clear)
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Divider()
-                                .padding(.leading, 14)
-                                .padding(.vertical, 2)
-                        }
-                    }
+                if let selectedSurah {
+                    selectedSurahCard(surah: selectedSurah)
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
-                        .fill(AppColors.surface)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
-                        .stroke(AppColors.borderSoft, lineWidth: 1)
-                )
             }
             if isLoadingSurah {
                 ProgressView("Sure hazırlanıyor...")
@@ -316,6 +260,145 @@ struct QuranView: View {
                 }
             }
         }
+    }
+
+    private var surahListCard: some View {
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sureler")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(AppColors.primaryDark)
+                    Text("Çevrimdışı indirilen veriden okunur")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+                Spacer()
+                Text("\(surahs.count) sure")
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(AppColors.highlightTint))
+                    .foregroundStyle(AppColors.primaryDeep)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+
+            ScrollView(.vertical, showsIndicators: true) {
+                LazyVStack(spacing: 0) {
+                    ForEach(currentSurahListPageItems) { surah in
+                        Button {
+                            Task { await loadSurah(number: surah.number) }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Text("\(surah.number).")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(AppColors.primaryDark)
+                                    .frame(width: 28, alignment: .leading)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(surah.englishName)
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundStyle(AppColors.textPrimary)
+
+                                    Text(surah.name)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(AppColors.textSecondary)
+                                }
+
+                                Spacer()
+
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    Text("\(surah.numberOfAyahs) Ayet")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(AppColors.textSecondary)
+
+                                    Text(surah.revelationType)
+                                        .font(.system(size: 12, weight: .regular))
+                                        .foregroundStyle(AppColors.textSecondary.opacity(0.85))
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(
+                                        selectedSurah?.number == surah.number
+                                        ? AppColors.highlightTint
+                                        : Color.clear
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        Divider()
+                            .padding(.leading, 14)
+                            .padding(.vertical, 2)
+                    }
+                }
+            }
+            .frame(minHeight: 240, maxHeight: 360)
+
+            QuranPaginationBar(
+                currentPage: surahListPage,
+                totalPages: totalSurahListPages,
+                onPrevious: { if surahListPage > 1 { surahListPage -= 1 } },
+                onNext: { if surahListPage < totalSurahListPages { surahListPage += 1 } }
+            )
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                .fill(AppColors.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                .stroke(AppColors.borderSoft, lineWidth: 1)
+        )
+    }
+
+    private func selectedSurahCard(surah: SurahDetail) -> some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(surah.number). \(surah.englishName)")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(AppColors.primaryDark)
+                    Text(surah.name)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+                Spacer()
+                Button {
+                    fullScreenScrollTarget = UUID()
+                    isSurahFullScreenReading = true
+                } label: {
+                    Label("Tam Ekran", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AppColors.primaryDark)
+            }
+
+            VerseContentCard(verses: currentSelectedSurahAyahPage)
+
+            QuranPaginationBar(
+                currentPage: surahAyahPage,
+                totalPages: totalSelectedSurahAyahPages,
+                onPrevious: { if surahAyahPage > 1 { surahAyahPage -= 1 } },
+                onNext: { if surahAyahPage < totalSelectedSurahAyahPages { surahAyahPage += 1 } }
+            )
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                .fill(AppColors.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                .stroke(AppColors.borderSoft, lineWidth: 1)
+        )
     }
 
     private func errorState(message: String, retry: @escaping () -> Void) -> some View {
@@ -347,6 +430,37 @@ struct QuranView: View {
         pageVerses.first?.juz ?? 1
     }
 
+    private var surahListPageSize: Int { 12 }
+
+    private var totalSurahListPages: Int {
+        max(1, Int(ceil(Double(surahs.count) / Double(surahListPageSize))))
+    }
+
+    private var currentSurahListPageItems: [SurahSummary] {
+        let safePage = max(1, min(surahListPage, totalSurahListPages))
+        let start = (safePage - 1) * surahListPageSize
+        guard start < surahs.count else { return [] }
+        let end = min(start + surahListPageSize, surahs.count)
+        return Array(surahs[start..<end])
+    }
+
+    private var surahAyahPageSize: Int { 10 }
+
+    private var totalSelectedSurahAyahPages: Int {
+        let count = selectedSurah?.ayahs.count ?? 0
+        return max(1, Int(ceil(Double(count) / Double(surahAyahPageSize))))
+    }
+
+    private var currentSelectedSurahAyahPage: [QuranVerse] {
+        guard let selectedSurah else { return [] }
+        let safePage = max(1, min(surahAyahPage, totalSelectedSurahAyahPages))
+        let verses = selectedSurah.ayahs.map { $0.asVerse }
+        let start = (safePage - 1) * surahAyahPageSize
+        guard start < verses.count else { return [] }
+        let end = min(start + surahAyahPageSize, verses.count)
+        return Array(verses[start..<end])
+    }
+
     @MainActor
     private func loadPage(number: Int) async {
         if let cachedPage = QuranOfflineStore.shared.page(number: number) {
@@ -375,6 +489,7 @@ struct QuranView: View {
         }
 
         surahs = QuranOfflineStore.shared.surahList()
+        surahListPage = min(surahListPage, totalSurahListPages)
         surahError = surahs.isEmpty ? "Sure listesi çevrimdışı veride yok. Önce indirme işlemini tamamlayın." : nil
     }
 
@@ -382,6 +497,7 @@ struct QuranView: View {
     private func loadSurah(number: Int) async {
         if let cachedSurah = QuranOfflineStore.shared.surah(number: number) {
             selectedSurah = cachedSurah
+            surahAyahPage = 1
             surahError = nil
             return
         }
