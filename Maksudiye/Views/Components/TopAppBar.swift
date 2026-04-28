@@ -29,7 +29,7 @@ struct TopAppBar: View {
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(AppColors.primaryDeep)
                 }
-                Text("Maksudiye Vakfı")
+                Text("Maksudiye")
                     .font(.system(size: 20, weight: .bold, design: .serif))
                     .foregroundStyle(AppColors.primaryDeep)
             }
