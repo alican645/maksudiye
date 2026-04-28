@@ -27,41 +27,10 @@ struct QuranVerse: Identifiable {
 
 struct VerseContentCard: View {
     let verses: [QuranVerse]
-    var showsActions: Bool = true
     var mushafMode: Bool = false
-    var onListen: () -> Void = {}
-    var onBookmark: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 16) {
-            if showsActions {
-                HStack(spacing: 8) {
-                    Spacer()
-
-                    Button(action: onListen) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "play.circle")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("DİNLE")
-                                .font(.system(size: 12, weight: .semibold))
-                                .tracking(0.6)
-                        }
-                        .foregroundStyle(AppColors.primaryDark)
-                        .padding(8)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.clear))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: onBookmark) {
-                        Image(systemName: "bookmark")
-                            .font(.system(size: 14, weight: .regular))
-                            .foregroundStyle(AppColors.primaryDark)
-                            .padding(8)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
             VStack(alignment: .trailing, spacing: 20) {
                 ForEach(Array(groupedVerses.enumerated()), id: \.element.id) { index, group in
                     if index > 0,

@@ -22,6 +22,7 @@ struct QuranView: View {
     @State private var isLoadingJuz: Bool = false
     @State private var activeTab: QuranTab = .page
     @State private var isFullScreenReading: Bool = false
+    @State private var isSurahFullScreenReading: Bool = false
     @State private var pageReaderScrollTarget = UUID()
     @State private var fullScreenScrollTarget = UUID()
     @State private var showOfflineDownloadPrompt: Bool = false
@@ -88,13 +89,25 @@ struct QuranView: View {
         .fullScreenCover(isPresented: $isFullScreenReading) {
             FullScreenQuranReader(
                 verses: pageVerses,
-                currentPage: currentPage,
-                totalPages: totalPages,
+                title: "Sayfa \(currentPage)",
                 onClose: { isFullScreenReading = false },
                 onPrevious: { if currentPage > 1 { currentPage -= 1 } },
                 onNext: { if currentPage < totalPages { currentPage += 1 } },
                 scrollTarget: fullScreenScrollTarget
             )
+        }
+        .fullScreenCover(isPresented: $isSurahFullScreenReading) {
+            if let selectedSurah {
+                FullScreenQuranReader(
+                    verses: selectedSurah.ayahs.map { $0.asVerse },
+                    title: "Sure \(selectedSurah.number) • \(selectedSurah.englishName)",
+                    onClose: { isSurahFullScreenReading = false },
+                    onPrevious: {},
+                    onNext: {},
+                    scrollTarget: fullScreenScrollTarget,
+                    showsNavigationButtons: false
+                )
+            }
         }
         .alert("Kur'an-ı Kerim indirilsin mi?", isPresented: $showOfflineDownloadPrompt) {
             Button("Haydi Başla") {
@@ -231,7 +244,13 @@ struct QuranView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(surahs) { surah in
                             Button {
-                                Task { await loadSurah(number: surah.number) }
+                                Task {
+                                    await loadSurah(number: surah.number)
+                                    if selectedSurah != nil {
+                                        fullScreenScrollTarget = UUID()
+                                        isSurahFullScreenReading = true
+                                    }
+                                }
                             } label: {
                                 HStack(spacing: 12) {
                                     Text("\(surah.number).")
@@ -276,7 +295,6 @@ struct QuranView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 360)
                 .background(
                     RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
                         .fill(AppColors.surface)
@@ -286,25 +304,16 @@ struct QuranView: View {
                         .stroke(AppColors.borderSoft, lineWidth: 1)
                 )
             }
-
             if isLoadingSurah {
-                ProgressView("Sure yükleniyor...")
+                ProgressView("Sure hazırlanıyor...")
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
+                    .padding(.vertical, 16)
             } else if let surahError {
                 errorState(message: surahError) {
                     if let selectedSurah {
                         Task { await loadSurah(number: selectedSurah.number) }
                     }
                 }
-            } else if let selectedSurah {
-                SurahSelectorPill(suraNumber: selectedSurah.number, suraName: selectedSurah.englishName)
-                VerseContentCard(verses: selectedSurah.ayahs.map { $0.asVerse })
-            } else {
-                Text("Okumak için bir sure seçin")
-                    .foregroundStyle(AppColors.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
             }
         }
     }
@@ -347,19 +356,7 @@ struct QuranView: View {
             pageError = nil
             return
         }
-
-        isLoadingPage = true
-        pageError = nil
-        do {
-            let response: QuranPageResponse = try await QuranAPI.shared.fetch(path: "page/\(number)/quran-uthmani")
-            totalPages = 604
-            pageVerses = response.data.ayahs.map { $0.asVerse }
-            currentPageSurah = response.data.ayahs.first?.surah
-            QuranOfflineStore.shared.setPage(response.data, number: number)
-        } catch {
-            pageError = "Sayfa getirilemedi. Lütfen bağlantınızı kontrol edin."
-        }
-        isLoadingPage = false
+        pageError = "Bu sayfa çevrimdışı veride yok. Önce indirme işlemini tamamlayın."
     }
 
     @MainActor
@@ -368,21 +365,7 @@ struct QuranView: View {
             currentPage = cachedStartPage
             return
         }
-
-        isLoadingJuz = true
-        pageError = nil
-        do {
-            let response: QuranJuzResponse = try await QuranAPI.shared.fetch(path: "juz/\(juz)/quran-uthmani")
-            if let firstPage = response.data.ayahs.first?.page {
-                currentPage = firstPage
-                QuranOfflineStore.shared.setJuzStartPage(firstPage, for: juz)
-            } else {
-                pageError = "Cüz başlangıç sayfası bulunamadı."
-            }
-        } catch {
-            pageError = "Cüz bilgisi getirilemedi."
-        }
-        isLoadingJuz = false
+        pageError = "Cüz bilgisi çevrimdışı veride yok. Önce indirme işlemini tamamlayın."
     }
 
     @MainActor
@@ -391,26 +374,8 @@ struct QuranView: View {
             await loadOfflineBundle()
         }
 
-        if !QuranOfflineStore.shared.surahList().isEmpty {
-            surahs = QuranOfflineStore.shared.surahList()
-            if selectedSurah == nil, let firstSurah = surahs.first {
-                await loadSurah(number: firstSurah.number)
-            }
-            return
-        }
-
-        isLoadingSurahList = true
-        do {
-            let response: SurahListResponse = try await QuranAPI.shared.fetch(path: "surah")
-            surahs = response.data
-            QuranOfflineStore.shared.setSurahList(response.data)
-            if selectedSurah == nil, let firstSurah = surahs.first {
-                await loadSurah(number: firstSurah.number)
-            }
-        } catch {
-            surahError = "Sure listesi alınamadı."
-        }
-        isLoadingSurahList = false
+        surahs = QuranOfflineStore.shared.surahList()
+        surahError = surahs.isEmpty ? "Sure listesi çevrimdışı veride yok. Önce indirme işlemini tamamlayın." : nil
     }
 
     @MainActor
@@ -420,17 +385,7 @@ struct QuranView: View {
             surahError = nil
             return
         }
-
-        isLoadingSurah = true
-        surahError = nil
-        do {
-            let response: SurahDetailResponse = try await QuranAPI.shared.fetch(path: "surah/\(number)/quran-uthmani")
-            selectedSurah = response.data
-            QuranOfflineStore.shared.setSurah(response.data, number: number)
-        } catch {
-            surahError = "Seçilen sure getirilemedi."
-        }
-        isLoadingSurah = false
+        surahError = "Seçilen sure çevrimdışı veride yok. Önce indirme işlemini tamamlayın."
     }
 
     @MainActor
@@ -725,12 +680,12 @@ private struct OfflineQuranBundle: Codable {
 
 private struct FullScreenQuranReader: View {
     let verses: [QuranVerse]
-    let currentPage: Int
-    let totalPages: Int
+    let title: String
     let onClose: () -> Void
     let onPrevious: () -> Void
     let onNext: () -> Void
     let scrollTarget: UUID
+    var showsNavigationButtons: Bool = true
     @State private var dragOffset: CGFloat = 0
 
     var body: some View {
@@ -748,7 +703,7 @@ private struct FullScreenQuranReader: View {
 
                     Spacer()
 
-                    Text("Sayfa \(currentPage)")
+                    Text(title)
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(.black.opacity(0.8))
                 }
@@ -761,7 +716,6 @@ private struct FullScreenQuranReader: View {
 
                         VerseContentCard(
                             verses: verses,
-                            showsActions: false,
                             mushafMode: true
                         )
                         .padding(.bottom, 8)
@@ -771,7 +725,7 @@ private struct FullScreenQuranReader: View {
                             proxy.scrollTo("fullScreenTop", anchor: .top)
                         }
                     }
-                    .onChange(of: currentPage) { _ in
+                    .onChange(of: title) { _ in
                         withAnimation(.easeOut(duration: 0.2)) {
                             proxy.scrollTo("fullScreenTop", anchor: .top)
                         }
@@ -780,16 +734,16 @@ private struct FullScreenQuranReader: View {
                 .frame(maxHeight: .infinity)
                 .scrollIndicators(.visible)
 
-                HStack(spacing: 12) {
-                    Button("Önceki") { onPrevious() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(AppColors.primaryDark)
-                        .disabled(currentPage <= 1)
+                if showsNavigationButtons {
+                    HStack(spacing: 12) {
+                        Button("Önceki") { onPrevious() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(AppColors.primaryDark)
 
-                    Button("Sonraki") { onNext() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(AppColors.primaryDark)
-                        .disabled(currentPage >= totalPages)
+                        Button("Sonraki") { onNext() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(AppColors.primaryDark)
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -809,7 +763,9 @@ private struct FullScreenQuranReader: View {
                         defer { dragOffset = 0 }
                         guard isIntentionalPageSwipe(value) else { return }
 
-                        if value.translation.width >= 150 {
+                        if !showsNavigationButtons {
+                            return
+                        } else if value.translation.width >= 150 {
                             onPrevious()
                         } else if value.translation.width <= -150 {
                             onNext()
