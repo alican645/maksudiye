@@ -6,6 +6,7 @@
 import SwiftUI
 
 struct QuranView: View {
+    @AppStorage("quran.currentPage") private var persistedPage: Int = 1
     @State private var currentPage: Int = 1
     @State private var totalPages: Int = 604
     @State private var pageVerses: [QuranVerse] = []
@@ -20,6 +21,8 @@ struct QuranView: View {
     @State private var isLoadingJuz: Bool = false
     @State private var activeTab: QuranTab = .page
     @State private var isFullScreenReading: Bool = false
+    @State private var pageReaderScrollTarget = UUID()
+    @State private var fullScreenScrollTarget = UUID()
 
     var body: some View {
         ScrollView {
@@ -56,10 +59,14 @@ struct QuranView: View {
         }
         .background(AppColors.background)
         .task {
+            currentPage = max(1, min(persistedPage, totalPages))
             if surahs.isEmpty { await loadSurahList() }
             if pageVerses.isEmpty { await loadPage(number: currentPage) }
         }
         .task(id: currentPage) {
+            persistedPage = currentPage
+            pageReaderScrollTarget = UUID()
+            fullScreenScrollTarget = UUID()
             await loadPage(number: currentPage)
         }
         .fullScreenCover(isPresented: $isFullScreenReading) {
@@ -69,40 +76,52 @@ struct QuranView: View {
                 totalPages: totalPages,
                 onClose: { isFullScreenReading = false },
                 onPrevious: { if currentPage > 1 { currentPage -= 1 } },
-                onNext: { if currentPage < totalPages { currentPage += 1 } }
+                onNext: { if currentPage < totalPages { currentPage += 1 } },
+                scrollTarget: fullScreenScrollTarget
             )
         }
     }
 
     private var pageReader: some View {
-        VStack(spacing: 16) {
-            SurahSelectorPill(
-                suraNumber: inferredSurahNumber,
-                suraName: inferredSurahName
-            )
+        ScrollViewReader { proxy in
+            VStack(spacing: 16) {
+                Color.clear
+                    .frame(height: 0)
+                    .id(pageReaderScrollTarget)
 
-            BismillahDivider()
+                SurahSelectorPill(
+                    suraNumber: inferredSurahNumber,
+                    suraName: inferredSurahName
+                )
 
-            juzJumpControl
+                BismillahDivider()
 
-            if isLoadingPage {
-                ProgressView("Sayfa yükleniyor...")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
-            } else if let pageError {
-                errorState(message: pageError) {
-                    Task { await loadPage(number: currentPage) }
+                juzJumpControl
+
+                if isLoadingPage {
+                    ProgressView("Sayfa yükleniyor...")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                } else if let pageError {
+                    errorState(message: pageError) {
+                        Task { await loadPage(number: currentPage) }
+                    }
+                } else {
+                    VerseContentCard(verses: pageVerses)
                 }
-            } else {
-                VerseContentCard(verses: pageVerses)
-            }
 
-            QuranPaginationBar(
-                currentPage: currentPage,
-                totalPages: totalPages,
-                onPrevious: { if currentPage > 1 { currentPage -= 1 } },
-                onNext: { if currentPage < totalPages { currentPage += 1 } }
-            )
+                QuranPaginationBar(
+                    currentPage: currentPage,
+                    totalPages: totalPages,
+                    onPrevious: { if currentPage > 1 { currentPage -= 1 } },
+                    onNext: { if currentPage < totalPages { currentPage += 1 } }
+                )
+            }
+            .onChange(of: pageReaderScrollTarget) { _ in
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo(pageReaderScrollTarget, anchor: .top)
+                }
+            }
         }
     }
 
@@ -376,8 +395,12 @@ private struct Ayah: Decodable {
     private func isAllahWord(_ rawWord: String) -> Bool {
         let punctuation = CharacterSet(charactersIn: "ۚۖۗۙۛۜ۝۞،؛,.!?()[]{}\"'«»")
         let stripped = rawWord.trimmingCharacters(in: punctuation)
-        let normalized = stripped.folding(options: .diacriticInsensitive, locale: .current)
+        let normalized = stripped
+            .replacingOccurrences(of: "ﷲ", with: "الله")
+            .folding(options: .diacriticInsensitive, locale: .current)
         return normalized.contains("الله")
+            || normalized.contains("اللَّه")
+            || normalized.contains("ٱللَّه")
     }
 }
 
@@ -398,6 +421,7 @@ private struct FullScreenQuranReader: View {
     let onClose: () -> Void
     let onPrevious: () -> Void
     let onNext: () -> Void
+    let scrollTarget: UUID
     @State private var dragOffset: CGFloat = 0
 
     var body: some View {
@@ -420,13 +444,22 @@ private struct FullScreenQuranReader: View {
                         .foregroundStyle(.black.opacity(0.8))
                 }
 
-                ScrollView(.vertical, showsIndicators: true) {
-                    VerseContentCard(
-                        verses: verses,
-                        showsActions: false,
-                        mushafMode: true
-                    )
-                    .padding(.bottom, 8)
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        Color.clear
+                            .frame(height: 0)
+                            .id(scrollTarget)
+
+                        VerseContentCard(
+                            verses: verses,
+                            showsActions: false,
+                            mushafMode: true
+                        )
+                        .padding(.bottom, 8)
+                    }
+                    .onChange(of: scrollTarget) { _ in
+                        proxy.scrollTo(scrollTarget, anchor: .top)
+                    }
                 }
                 .frame(maxHeight: .infinity)
                 .scrollIndicators(.visible)
