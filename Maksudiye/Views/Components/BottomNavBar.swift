@@ -12,7 +12,7 @@ enum BottomTab: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .home: "HOME"
+        case .home: "Namaz Vakitleri"
         case .quran: "Kur'an-ı Kerim"
         case .about: "Hakkımızda"
         }

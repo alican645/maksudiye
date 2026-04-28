@@ -76,39 +76,40 @@ struct HomeView: View {
 
 private struct LocationSelectionSheet: View {
     @ObservedObject var viewModel: PrayerTimesViewModel
+    @State private var citySearchText = ""
+    @State private var districtSearchText = ""
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("İl") {
-                    Picker("Şehir", selection: Binding(
-                        get: { viewModel.selectedCity?.id },
-                        set: { newID in
-                            guard let id = newID,
-                                  let city = viewModel.cities.first(where: { $0.id == id }) else { return }
+            ZStack {
+                AppColors.background.ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 16) {
+                        locationSection(
+                            title: "İl Seçin",
+                            subtitle: "Bulunduğunuz şehri seçin",
+                            selectionText: viewModel.selectedCity?.sehirAdi ?? "Şehir seçilmedi",
+                            searchText: $citySearchText,
+                            placeholder: "Şehir ara",
+                            items: filteredCities.map(\.sehirAdi)
+                        ) { cityName in
+                            guard let city = filteredCities.first(where: { $0.sehirAdi == cityName }) else { return }
                             Task { await viewModel.fetchDistrictsIfNeeded(for: city) }
                         }
-                    )) {
-                        Text("Seçiniz").tag(String?.none)
-                        ForEach(viewModel.cities) { city in
-                            Text(city.sehirAdi).tag(Optional(city.id))
-                        }
-                    }
-                }
 
-                Section("İlçe") {
-                    Picker("İlçe", selection: Binding(
-                        get: { viewModel.selectedDistrict?.id },
-                        set: { newID in
-                            guard let id = newID else { return }
-                            viewModel.selectedDistrict = viewModel.districts.first(where: { $0.id == id })
-                        }
-                    )) {
-                        Text("Seçiniz").tag(String?.none)
-                        ForEach(viewModel.districts) { district in
-                            Text(district.ilceAdi).tag(Optional(district.id))
+                        locationSection(
+                            title: "İlçe Seçin",
+                            subtitle: "Namaz vakitleri için ilçe belirleyin",
+                            selectionText: viewModel.selectedDistrict?.ilceAdi ?? "İlçe seçilmedi",
+                            searchText: $districtSearchText,
+                            placeholder: "İlçe ara",
+                            items: filteredDistricts.map(\.ilceAdi)
+                        ) { districtName in
+                            viewModel.selectedDistrict = filteredDistricts.first(where: { $0.ilceAdi == districtName })
                         }
                     }
+                    .padding(20)
                 }
             }
             .navigationTitle("Konum Seçimi")
@@ -129,6 +130,90 @@ private struct LocationSelectionSheet: View {
                 await viewModel.fetchDistrictsIfNeeded(for: selectedCity)
             }
         }
+    }
+
+    private var filteredCities: [PrayerCity] {
+        if citySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return viewModel.cities
+        }
+        return viewModel.cities.filter { $0.sehirAdi.localizedCaseInsensitiveContains(citySearchText) }
+    }
+
+    private var filteredDistricts: [PrayerDistrict] {
+        if districtSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return viewModel.districts
+        }
+        return viewModel.districts.filter { $0.ilceAdi.localizedCaseInsensitiveContains(districtSearchText) }
+    }
+
+    private func locationSection(
+        title: String,
+        subtitle: String,
+        selectionText: String,
+        searchText: Binding<String>,
+        placeholder: String,
+        items: [String],
+        onSelect: @escaping (String) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(AppColors.primaryDark)
+                Text(subtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppColors.textSecondary)
+            }
+
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(AppColors.primary)
+                TextField(placeholder, text: searchText)
+                    .textInputAutocapitalization(.words)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(AppColors.borderSoft, lineWidth: 1.2)
+            )
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(items, id: \.self) { item in
+                        Button {
+                            onSelect(item)
+                        } label: {
+                            Text(item)
+                                .font(.system(size: 14, weight: selectionText == item ? .semibold : .regular))
+                                .foregroundStyle(selectionText == item ? .white : AppColors.primaryDark)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(selectionText == item ? AppColors.primary : AppColors.surface)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(selectionText == item ? AppColors.primary : AppColors.borderSoft, lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Label(selectionText, systemImage: "checkmark.seal.fill")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(AppColors.primaryDark)
+        }
+        .padding(16)
+        .background(AppColors.highlightTint, in: RoundedRectangle(cornerRadius: AppMetrics.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppMetrics.cardRadius)
+                .stroke(AppColors.borderSoft, lineWidth: 1)
+        )
     }
 }
 
